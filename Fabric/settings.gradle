@@ -1,0 +1,11 @@
+pluginManagement {
+    repositories {
+        maven { url "https://maven.fabricmc.net/" }
+        gradlePluginPortal()
+    }
+}
+
+rootProject.name = 'worlddata_core_benchmark'
+
+include 'benchmark-common'
+include 'worlddata-test-suite'

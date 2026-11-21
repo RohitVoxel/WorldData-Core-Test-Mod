@@ -1,0 +1,69 @@
+plugins {
+    id 'java-library'
+    id 'net.neoforged.moddev'
+}
+
+evaluationDependsOn(':benchmark-common')
+
+base {
+    archivesName = project.archives_base_name
+}
+
+neoForge {
+    version = project.neo_version
+
+    runs {
+        client {
+            client()
+        }
+
+        server {
+            server()
+            programArgument '--nogui'
+        }
+    }
+
+    mods {
+        "${project.mod_id}" {
+            sourceSet sourceSets.main
+        }
+    }
+}
+
+repositories {
+    maven {
+        name = "CurseMaven"
+        url = "https://cursemaven.com"
+        content {
+            includeGroup "curse.maven"
+        }
+    }
+}
+
+dependencies {
+    implementation project(':benchmark-common')
+    implementation "curse.maven:worlddata-core-1812200:9665284"
+}
+
+var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {
+    var replaceProperties = [
+            minecraft_version_range: project.minecraft_version_range,
+            neo_version_range      : project.neo_version_range,
+            loader_version_range   : project.loader_version_range,
+            mod_id                 : project.mod_id,
+            mod_name               : project.mod_name,
+            mod_license            : project.mod_license,
+            mod_version            : project.mod_version,
+    ]
+    inputs.properties replaceProperties
+    expand replaceProperties
+    from "src/main/templates"
+    into "build/generated/sources/modMetadata"
+}
+
+sourceSets.main.resources.srcDir generateModMetadata
+neoForge.ideSyncTask generateModMetadata
+
+jar {
+    from project(':benchmark-common').sourceSets.main.output
+}

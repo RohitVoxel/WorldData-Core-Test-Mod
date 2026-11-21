@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "package": "net.worlddata.benchmark.neoforge.client.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "minVersion": "0.8",
+  "client": [
+    "F3PackMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

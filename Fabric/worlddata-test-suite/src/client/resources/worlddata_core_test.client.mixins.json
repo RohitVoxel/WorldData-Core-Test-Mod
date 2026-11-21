@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "package": "net.worlddata.benchmark.fabric.client.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "minVersion": "0.8",
+  "client": [],
+  "mixins": [
+    "F3PackMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

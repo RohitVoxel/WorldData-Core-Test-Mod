@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WorldData Core Test Suite - ATM_PACK V1</title>
+<style>
+  :root { --bg:#fff; --fg:#1b1f24; --muted:#5b6570; --line:#d8dee4; --card:#f6f8fa; --accent:#0b6bcb; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f1318; --fg:#e6e9ed; --muted:#9aa5b1; --line:#2b333c; --card:#171d24; --accent:#58a6ff; } }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.55 system-ui, sans-serif; }
+  main { max-width:920px; margin:0 auto; padding:24px 18px 80px; }
+  h1 { font-size:1.8rem; margin:.2em 0; } h2 { margin-top:2em; border-bottom:1px solid var(--line); padding-bottom:.2em; } h3 { margin-top:1.4em; }
+  code, pre { font-family: ui-monospace, Consolas, monospace; font-size:.9em; } code { background:var(--card); padding:1px 5px; border-radius:4px; }
+  pre { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; display:block; overflow-x:auto; } th, td { border:1px solid var(--line); padding:6px 9px; text-align:left; vertical-align:top; } th { background:var(--card); }
+  .note { background:var(--card); border-left:4px solid var(--accent); padding:10px 14px; border-radius:6px; margin:14px 0; }
+  .muted { color:var(--muted); }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+<main>
+<h1>WorldData Core Test Suite</h1>
+<p class="muted">ATM_PACK V1 - a realistic, ops-count-driven stress test for WorldData Core, compared call by call with plain Minecraft. Fabric, Minecraft 1.21.1, Java 21.</p>
+
+<h2>What it does</h2>
+<p>One run is one number you choose: how many ops to complete (default 200,000). The run has no time limit and no scale knobs. It ends when completed ops reach that total, then a drain settles everything still in flight. Wall time is a result, not a setting.</p>
+<p>The ops are issued in <b>batches of at most 8,000</b>, one batch after another with no pause in between, and the test mod itself is held to a small <b>time budget per server tick</b> (3 ms by default) so it cannot starve the game. Chunk loading is done by <b>Minecraft only</b>, in <b>60 waves</b> of 1 to 64 chunks per full run, and no batch ever waits for a wave. WorldData Core is never asked to load a chunk and its diagnostics are never called: the Core arm only reads what Minecraft has loaded.</p>
+<p>The same seeded plan runs on two sides: <b>Minecraft</b> (ServerLevel only; chosen with <code>run vanilla</code>, or picked automatically when WorldData Core is not installed) and <b>WorldData Core</b> (reads through its public API, writes through Minecraft, plus a paired Minecraft baseline sampled on the same coordinates, one read in 32 of an action, one in 256 for chunk, box and grid scans, plus the first 64 successful samples of every action and 16 for the scans, so p50 and p99 stay valid while the baseline stays cheap). The report shows both sides, the time each took to finish all ops and the sample policy.</p>
+
+<h2>Quick start</h2>
+<pre>1. Build the Core:      WorldData_Core_Fabric.zip  -&gt;  build/libs/worlddata_core-1.0.0.jar
+2. Copy the jar to:     worlddata-test-suite/libs/worlddata_core-1.0.0.jar
+3. ./gradlew build      (worlddata-test-suite/build/libs/worlddata-core-test-suite-0.1.0.jar)
+4. Put both jars in mods/ and open a THROWAWAY world (the run edits blocks in a sky arena and restores them)
+5. /worlddatatest run                    (200,000 ops, no ops per second cap)
+   /worlddatatest run 500000             (ops)
+   /worlddatatest run 500000 40000       (ops, opsPerSec: send at most 40000 ops per second; 0 or left out = no cap)
+   /worlddatatest run 500000 40000 4     (ops, opsPerSec, tickMs: test mod time per server tick, 1 to 5 ms, default 3)
+   /worlddatatest run 500000 40000 4 42  (ops, opsPerSec, tickMs, seed)
+   /worlddatatest run vanilla 200000     (source first: Minecraft only, no restart needed)
+   /worlddatatest run core 200000        (source first: WorldData Core)</pre>
+<table>
+<tr><th>Command</th><th>What it does</th></tr>
+<tr><td><code>/worlddatatest run [core|vanilla|auto] [ops] [opsPerSec] [tickMs] [seed] [thrash]</code></td><td>Starts a run in the dimension you run it from, vanilla or custom. Alias <code>/wdtest</code>. Needs permission level 2. <code>opsPerSec</code> comes right after the ops count: the most ops the test mod issues in any one second. Left out or 0 means no cap, so ops are asked for as fast as the per-tick time budget allows. <code>tickMs</code> is whole milliseconds of server time per tick the test mod may use, 1 to 5, default 3. Each argument may be left out from the right, and an argument needs all the ones before it.</td></tr>
+<tr><td><code>ramp [core|vanilla|auto] &lt;targetMs&gt; [options]</code> (alias <code>throttle</code>)</td><td>Throttle ramp: raises the ops per second step by step until server MSPT stays above <code>targetMs + overMs</code> for a hold window, then writes a report with the ops/s timeline. See "Throttle ramp and efficiency" below.</td></tr>
+<tr><td><code>efficiency [auto|core|vanilla|minecraft] [options]</code></td><td>Efficiency: how many useful ops fit into a fixed window of measured op time per tick (ops per ms), for one arm. See below.</td></tr>
+<tr><td><code>counts [chunk|section]</code></td><td>Compares the block id at every position of the chunk (or the 16-block section) you stand in between Minecraft and WorldData Core, read through the Core's pull API in the same tick (mid-tick data). It prints only the result in chat; the report file path goes to the server log.</td></tr>
+<tr><td><code>stop</code></td><td>Stops issuing, drains what is in flight, writes the report.</td></tr>
+<tr><td><code>status</code></td><td>Phase, elapsed time, completed / total, in flight, outcomes, MSPT, test mod time this tick, batch number and size, Minecraft waves started and tickets held.</td></tr>
+<tr><td><code>times</code></td><td>Time to finish all ops for the latest finished Minecraft run and WorldData Core run, and which was faster.</td></tr>
+<tr><td><code>latency</code></td><td>Per-API p50 / p99 for the active run, or the last finished one.</td></tr>
+<tr><td><code>apicoverage</code></td><td>Calls per surface family.</td></tr>
+<tr><td><code>captureaudit</code></td><td>Block-write check: compares every sampled written position between Minecraft and WorldData Core now. All air variants count as one block, and a position either side cannot read is counted as unreadable, not as a mismatch. A block written in the last tick or two can differ until Core has caught up. Outside a run it shows the check made at the end of the last run.</td></tr>
+<tr><td><code>sources</code></td><td>The source choices (<code>core</code>, <code>vanilla</code> or <code>minecraft</code>, <code>auto</code>), whether WorldData Core is installed, what <code>auto</code> picks, and examples. Pick the source per run; no Minecraft restart is needed. A Minecraft run made with Core installed still carries Core's own tick work, and the report and <code>times</code> say so.</td></tr>
+<tr><td><code>coverage [radius]</code></td><td>Compares the chunks Minecraft holds around you (radius 1 to 32, default 8) with what WorldData Core serves live. Reports gaps (Minecraft holds it, Core does not serve it) and ghosts (Core says live, Minecraft dropped it), and looks again after 2 s and 10 s to tell a delay from a real gap. Reads only; never loads a chunk. Report in <code>worlddata-core-test-reports/checks/</code>.</td></tr>
+<tr><td><code>verify [radius]</code></td><td>Compares Core's derived layers with Minecraft over the loaded chunks around you (radius 1 to 3, default 1): section emptiness, water at every block, the height per column for all four height kinds (against a block scan that uses Minecraft's own heightmap predicates, and against Minecraft's heightmaps as warnings only), and scans by block name and by tag. Run it when the world is quiet.</td></tr>
+<tr><td><code>monitorcheck</code></td><td>Self-check of the Core API monitor: exact counts per call, nested reads kept apart, repeats flagged, sampling scaled to the exact total, off means off, and whether this mod is recognised by mod id. Restores the monitor's state and clears its counters.</td></tr>
+<tr><td><code>bench [compare] &lt;api&gt; [count] [mode]</code></td><td>Micro-bench: one timed burst of a single Core read on the server thread (<code>stateIdAt</code>, <code>blockAt</code>, <code>materialAt</code>, <code>waterAt</code>, <code>isPresent</code>, <code>matchesAt</code>, <code>hasBlock</code>, <code>countBlocks</code>), printing ops/s and min / p50 / p99 / max latency. <code>compare</code> reads the same positions through Minecraft as well. Modes: <code>fixed</code> (64 positions in your chunk), <code>random</code> (seeded positions around you) and <code>acquire</code> (random, with the Core chunk lookup in every call). Default counts 100,000 / 10,000 / 1,000, clamped to 1,000,000 / 200,000 / 50,000. Never loads a chunk. Numbers are from this micro-bench, not pack TPS.</td></tr>
+</table>
+<p>The report files are written automatically the moment a run ends (total reached, <code>stop</code>, or server shutdown) to <code>&lt;game dir&gt;/worlddata-core-test-reports/&lt;run id&gt;/</code>.</p>
+
+<h2>How a run works</h2>
+<h3>The test mod never holds ops</h3>
+<p>Each planned issue is a pure function of <code>(seed, index)</code>. It is handed to WorldData Core (or Minecraft) the moment it is drawn and the answer decides its outcome: <code>PASS</code>, <code>UNLOADED</code>, <code>UNAVAILABLE</code>, <code>TIMEOUT</code> or <code>FAIL</code>. If the answer is "not ready yet" the harness keeps only a reference (chunk token, issue time) and polls the side's own status (the Core's <code>availability</code>, Minecraft's chunk state) until it is terminal. There is no local queue, no local waiting loop and no local retry.</p>
+
+<h3>Batches, one after another, no pause</h3>
+<ul>
+<li>The total is cut into batches. A batch is at most <b>8,000 ops</b> (hard cap) and at least 400 (except a tiny run). Sizes are dynamic and seeded: they average a 200th of the total (800 to 8,000) and vary between half and one and a half times that, so both arms get the same batches.</li>
+<li>Batches are <b>sequential</b> and <b>never wait for each other's answers</b>. Batch N+1 opens as soon as every op of batch N has been <i>issued</i>, in the same tick if budget remains, so there is <b>no designed pause</b> between ops or between batches (0 ticks, reported). An op whose answer is \"not ready yet\" leaves the batch as a reference on a <b>side lane</b> and settles there: it is polled in the background and ends as PASS, UNLOADED, UNAVAILABLE, FAIL or, only if nothing answered for 90 s, a watchdog TIMEOUT counted on its own line. A slow chunk load therefore never stalls the next batch; the report counts how many batches opened while something was still waiting.</li>
+<li>Each batch has its own <b>mix</b>: the base shares below are scaled by a seeded factor per kind and one theme kind is boosted, so batches differ from each other while the run average stays on the base shares.</li>
+</ul>
+
+<h3>Ops per second cap</h3>
+<p>The <code>opsPerSec</code> argument limits how many counted ops the test mod issues. Left out, or 0, nothing is paced and the run goes as fast as the per-tick time budget allows. With a value, a token bucket paces the ops smoothly across ticks and a sliding one-second window guarantees that no one-second window of ticks holds more than the cap (the report shows the peak). The cap has no upper limit of its own: with 200,000 total ops, a cap of 200,000 is allowed and the run can finish in about a second if the time budget lets it. The cap counts ops as the run counts them; the 16-thread contention probe, the background polls and the Minecraft baseline reads are outside the ops count. Ticks held back by the cap are counted separately and never count as idle ticks with work left. The report shows the cap, the average ops per second and the peak in any one second.</p>
+
+<h3>Dimensions and heights</h3>
+<p>A run starts in the dimension of the command source. The read Y range and the sky arena are derived from that dimension's height, so shorter, taller or custom dimensions are handled; the standard overworld keeps y 40 to 95 for reads and y 232 to 239 for the arena. Modded blocks and biomes are read through the same registry ids as vanilla ones.</p>
+
+<h3>The per-tick time budget</h3>
+<p>Every server tick the harness may work only until its time budget is spent: <b>3 ms by default</b>, set with the <code>tickMs</code> argument of the run command (whole milliseconds, 1 to 5; anything else is refused by the command). The clock is <code>System.nanoTime()</code>, checked before every op, so a batch is spread over as many ticks as it needs and never runs as one big loop. The budget covers everything the test mod does on the server thread: polling the status of waiting references (at most 40 % of the budget), the Minecraft ticket calls and releases of the waves, the read ops themselves, the 16-thread contention probe and the allocation sample. At least one op is issued per tick so a run always progresses. This is the only protection of the tick rate; there is no feedback loop on MSPT. The report shows the real harness time per tick (mean / p50 / p99 / max).</p>
+
+<h3>Thrash workers per batch (16 by default, up to 64)</h3>
+<p>Every op of a batch belongs to one of the logical workers (16 by default; round robin, so each gets an equal share). About 40 % of the point, layer and filter reads of a batch go to <b>16 shared cells</b> of the pinned hotspot chunks with the same call and the same coordinates, so several workers read the same position within a tick; the rest use coordinates of their own. Reads of the same cell with the same call in the same tick must return the same digest; any disagreement is counted. The report lists ops, shared-coordinate ops and not-passed ops for each worker. Separately, every 8th batch a <b>contention probe</b> runs one real thread per worker (16 by default) on the same cells, synchronously inside the tick (so no write can race them), and compares their digests and speed with one thread. The probe is not counted in the ops total, and its reads per thread shrink from 256 down to 32 if it ever costs more than half the budget. World writes stay on the server thread.</p>
+<p>The worker count is the fifth argument of the run command, <code>run [ops] [opsPerSec] [tickMs] [seed] [thrash]</code>: 16 by default, any whole number from 16 to 64. It sets the logical workers of every batch and the real threads of the contention probe; the 16 shared cells and the 40 % stay the same. A wider thrash changes which worker gets which op, so compare runs only with the same thrash value. <code>ramp</code> and <code>efficiency</code> take the same value as <code>thrash=16|32|64</code> (<code>on</code> means 16); it is off there by default.</p>
+
+<h3>Force-load waves: Minecraft only, 60 per run</h3>
+<p>Chunks are loaded with Minecraft's own region tickets (<code>ServerChunkCache.addRegionTicket</code> and <code>removeRegionTicket</code>), the same way in both arms. In the Core arm WorldData Core never receives a load request of any kind; it only reads chunks after Minecraft has loaded them. The waves run beside the batches, never inside them:</p>
+<ul>
+<li><b>60 waves on a full run</b> (120,000 ops or more). A shorter run scales the count down (one wave per 2,000 ops, at least one). Waves start when the op cursor passes a seeded trigger spread over the first 90 % of the run, and the run only ends after the last started wave has finished.</li>
+<li>Every wave loads <b>1 to 64 chunks</b>, drawn uniformly, a different size each time. A wave is a rectangle of chunks submitted as a few small ticket calls (at most 16 chunks per call) plus up to seven single chunks that also use a chunk future. The future is requested from a helper thread, because <code>ServerChunkCache.getChunkFuture</code> called on the server thread parks it until the chunk is ready.</li>
+<li>Waves <b>reuse</b> chunks: they are cut from a bounded pool of 32 x 32 chunks around 12 seeded anchors, so later waves revisit the chunks of earlier ones (this is what measures reload after release). The reader refuses to touch more than <b>1,500 unique chunks</b> (hotspots included) or more than 4,096 ticket calls; refusals are counted, and a normal run stays far below both.</li>
+<li>Each wave is held for 20 ticks after all its chunks are loaded so reads can hit them, then its tickets are removed so the chunks can unload. Tickets are reference counted per chunk, so overlapping waves share a ticket and only the last release removes it. Everything still held is released when the run ends, and the report shows request calls, release calls and tickets still held (they must match and be zero).</li>
+<li>A wave that never finishes does not block anything; after 90 s its group is counted as timed out and released.</li>
+<li><b>The server thread never waits for a load.</b> Submitting a group only adds tickets and, for a single chunk, hands the future request to the helper thread. Readiness is polled once per tick, never in the tick the group was submitted, and only while the poll share of the tick budget lasts. A chunk counts as ready when <code>ServerChunkCache.getChunkNow</code> returns it (loaded to FULL), not when <code>hasChunk</code> says its ticket level allows it. The reads of both arms check this before <code>getChunk</code> so that no read can park the server thread on a chunk that is still loading. The time a future takes to complete is recorded when it completes, not when it is polled.</li>
+<li>The 24 hotspot chunks (6 clusters of 2x2) are pinned with Minecraft tickets in 9 calls at the start and stay pinned for the whole run; they are released when the run ends. They are not part of the 60 waves.</li>
+<li>Reads that are not aimed at hotspots go to the chunks of the most recently started wave, so they meet chunks that are loading, loaded or already released.</li>
+</ul>
+
+<h3>Phases (by fraction of completed ops)</h3>
+<table>
+<tr><th>Phase</th><th>Ops</th><th>What happens</th></tr>
+<tr><td>Prime and populate</td><td>0-10 %</td><td>The hotspot chunks are pinned at the start; reads target only hotspots.</td></tr>
+<tr><td>Thrash</td><td>10-50 %</td><td>Full mix across all batches, 16 workers (up to 64) on shared and own coordinates, contention probes.</td></tr>
+<tr><td>Mutation</td><td>50-85 %</td><td>12 % of ops are Minecraft writes in four traces (quarry plane, redstone flip, cross-seam traversal, fluid cascade) in a sky arena; lag probes run, and one block-write check is made at the end of the run (report.json only).</td></tr>
+<tr><td>Spill and wind-down</td><td>85-100 %</td><td>Wave chunks keep flowing through load, release and unload.</td></tr>
+<tr><td>Drain</td><td>after the last issue</td><td>Starts any wave not started yet, polls every waiting reference and wave to a terminal state (hard stop after 600 ticks, remaining references counted as TIMEOUT), then releases all tickets, restores the world and flushes the sink.</td></tr>
+</table>
+
+<h3>Op mix</h3>
+<p>Base shares, averaged over all batches of a run (each batch shifts them as described above).</p>
+<table>
+<tr><th>Kind</th><th>Share</th><th>WorldData Core calls</th></tr>
+<tr><td>Point reads</td><td>24 %</td><td><code>stateIdAt</code>, <code>blockAt</code>, <code>materialAt</code>, <code>waterAt</code>, <code>isPresent</code>, <code>isSubmerged</code></td></tr>
+<tr><td>Derived layers</td><td>18 %</td><td><code>heightmap</code>, <code>column</code>, <code>occupancy</code>, <code>blockIndex</code> (each hotspot's focus rotates)</td></tr>
+<tr><td>Filter / scan</td><td>14 %</td><td><code>matchesAt</code>, <code>hasBlock</code>, <code>countBlocks</code>, <code>findBlocks</code>, <code>visitBlocks</code></td></tr>
+<tr><td>Spatial</td><td>14 %</td><td><code>summarizeBox</code>, <code>summarizeSphere</code>, <code>visitBox</code>, <code>visitSphere</code>, <code>visitColumn</code>, <code>sampleGrid</code></td></tr>
+<tr><td>Light</td><td>10 %</td><td><code>light().lightAt</code> (client thread in singleplayer)</td></tr>
+<tr><td>Meta</td><td>10 %</td><td><code>biome</code>, <code>availability</code> (a quarter on never-loaded chunks), <code>raw()</code>, <code>peek</code>, <code>world().snapshot</code></td></tr>
+<tr><td>Block lookup</td><td>10 %</td><td><code>findBlocksByTag / ByName / ByStateId</code>, <code>countBlocksByTag / ByName / ByStateId</code>, <code>hasBlockByTag / ByName / ByStateId</code>, <code>hasTagAt</code>, and the registry calls <code>blocks().stateIdOf</code>, <code>stateIdsOfBlock</code>, <code>stateIdsOfTag</code>, <code>blockIdOf</code>, <code>info</code>, <code>hasTag</code></td></tr>
+</table>
+<p>The block lookup kind uses the Core's lookup by tag, name and state id and its registry facade. The Minecraft side does the same work with <code>BlockState.is</code> over the chunk (tags, blocks and state-id sets), <code>BuiltInRegistries.BLOCK</code>, <code>Block.getId</code> / <code>stateById</code> and a registry tag walk. Names, tags and state tags come from one fixed set shared by both arms (<code>LookupSet</code>). A by-state-id read answers UNAVAILABLE on the Core side until the Core has seen a state of one of those blocks. Chunk scans and the tag walk are sampled as heavy baselines.</p>
+<p>These are all the WorldData Core calls the suite makes: query calls only, each timed on its own. There is no call that loads, pins or releases a chunk on the Core, and no call to its diagnostics. The test mod's own metrics (counters, latency tables, caches of what it saw) are kept inside the test mod.</p>
+
+<h2>Throttle ramp and efficiency</h2>
+<p>Two extra commands measure speed in a stable area. Both only read, use the same op mix and seed on both arms, work in any dimension, and have no gates: the report only shows measured numbers. Run them in a loaded, unchanging area, standing still, with the same world, dimension, seed and spot for every arm you compare.</p>
+<p>The ops are the pack read mix (point, layer, filter, spatial, biome / availability / raw / peek / world snapshot) on the 24 pinned hotspot chunks. There are no force-load waves, no writes and no light reads (the pack run issues those from the client tick on an integrated server; these modes do not). The <b>Minecraft arm</b> uses Minecraft APIs only; the <b>WorldData Core arm</b> uses the Core public API only, with no paired Minecraft baseline. <code>arm=auto</code> uses Core when it is installed; <code>vanilla</code> forces the Minecraft arm even with Core installed (Core is then not queried, but its own tick work still runs), so both arms can be compared on one install. The load across arms is not assumed identical, and the report says so.</p>
+<h3>Throttle ramp: <code>ramp &lt;targetMs&gt; [seed] [overMs=10] [holdTicks=100] [startOps=100] [stepOps=100] [tickIssueMs]</code></h3>
+<p>Ops per second start at <code>startOps</code> and rise by <code>stepOps</code> every second of wall clock. Each tick gets a token bucket share of the current rate (at most about 100 ms of tokens, so a long tick cannot cause a burst). The run stops when server MSPT (tick start to tick end, which includes the test mod's own issue time) stays above <code>targetMs + overMs</code> for <code>holdTicks</code> ticks in a row. A few natural spikes never stop it; they are counted. With <code>tickIssueMs</code> set, no more than that many ms are spent issuing in one tick and the remaining intended ops are dropped and counted; left out, every intended op is issued however long it takes (50 ms is only a reference when you read MSPT).</p>
+<p>More options as <code>name=value</code> (any order): <code>stepSeconds=1</code>, <code>maxOps=5000000</code> (ceiling, held for twice the hold window, then the run ends), <code>maxMinutes=60</code>, <code>packBaselineMs</code> (idle MSPT of your pack, only quoted in the report), <code>coreBudgetMs</code> (recorded as stated), <code>thrash=on|16|32|64</code> (a burst of that many real threads every 20 ticks, outside the measured window; <code>on</code> is 16; off by default; efficiency takes it too), <code>arm=auto|core|vanilla</code>, <code>note=text</code>. The report gives the last step before MSPT stayed above the stop level and the step where it started to, intended and achieved ops/s, MSPT and issue time for the whole run and the final window, outcomes, how the tick time splits between the issue loop and the rest, per-second <code>timeline.csv</code> and per-tick <code>ticks.csv</code>. With +100 ops/s per second a fast reader needs a long time to reach a high rate; raise <code>stepOps</code> for a quicker ramp.</p>
+<h3>Efficiency: <code>efficiency &lt;arm|auto&gt; [windowMs=1.0] [ticks=300] [seed] [coreBudgetMs] [safetyMs] [holdTicks=100] [warmup=60]</code></h3>
+<p>Each tick, after a warm-up, a fixed window of <code>windowMs</code> of measured op time on the server thread is opened and ops are issued until it is used up; the report counts how many useful (PASS) ops completed per ms. Warm-up runs at least <code>warmup</code> ticks and until no read has been pending for the last ticks of it. Pending ops are not counted as completed. The window length is measured, not assumed: ops per ms always uses the measured window, and the report gives the overshoot (the last op ends after the deadline) and the clock-read cost per op. It also gives ops per window, PASS rate, a per-read-action table (ops per ms of each action), MSPT for context and per-call latency. <code>safetyMs</code> (default 100) stops the run if the mean MSPT over <code>holdTicks</code> ticks stays above it.</p>
+<p>The test mod cannot read or set WorldData Core's budget through the public API. <code>coreBudgetMs</code> (default 4, Core's own default) is recorded as stated, so set the real value first with <code>/worlddata budget fixed &lt;ms&gt;</code> and pass the same number; "Core budget used" is shown as not exposed.</p>
+<p>When the other arm has been run before (same mode), each report adds a Core vs Minecraft table with the ratio, and says if the two runs used different settings. The last result of each arm is kept in the reports folder. Files per run: <code>report.md</code>, <code>report.json</code>, <code>ticks.csv</code>, <code>latency.csv</code>, plus <code>timeline.csv</code> (ramp) or <code>actions.csv</code> (efficiency). <code>stop</code> ends either run early and still writes its report; <code>status</code> shows its progress.</p>
+
+<h2>The report</h2>
+<p>Files per run: <code>report.json</code>, <code>report.md</code> (the short report), <code>report.csv</code> (one wide row, <code>latency_&lt;api&gt;_p50_ns</code> and friends), <code>latency.csv</code> (one row per API), <code>curve.csv</code> (completed ops, in flight, tick time, batch size, batch number and harness time over time) and <code>sink.bin</code> (the data the DataSink consumed).</p>
+<table>
+<tr><th>Section</th><th>Contents</th></tr>
+<tr><td>Header</td><td>One line saying the numbers come from WorldData Core Test (a dedicated benchmark mod running a synthetic workload) and are not a guarantee of TPS or MSPT in any modpack, then source, side and dimension, completed ops, wall duration, ops per second cap, average and peak, ops per MSPT-ms, MSPT mean / p95 / p99 / max, the test mod's own time per tick, allocation per tick, thrash workers and seed.</td></tr>
+<tr><td>Time to finish all ops</td><td>Minecraft vs WorldData Core as <code>m:ss minutes</code> (for example 4:12 vs 3:57), ops per second, which side was faster and by how much. The other side comes from its latest finished run saved in the reports folder, so two separate game launches still give one side-by-side table. A fair comparison needs the same op count and seed; otherwise the report says so.</td></tr>
+<tr><td>Outcomes</td><td>PASS, UNLOADED, UNAVAILABLE, TIMEOUT and FAIL totals; in-flight peak; drain timeouts.</td></tr>
+<tr><td>WorldData Core vs Minecraft</td><td>Each WorldData Core read next to the Minecraft call it replaces, sampled on the same coordinates, with p50 and p99 and the p50 ratio.</td></tr>
+<tr><td>Speed / Latency</td><td>For every API the mod uses from WorldData Core and from Minecraft: total, passed, failed, waiting, timeout, unavailable, unloaded, p50, p99. Timing is wall nanoseconds around the public call only (log-linear histogram, about 12 % resolution). min, p95, mean and max are in <code>latency.csv</code> and <code>report.json</code>.</td></tr>
+<tr><td>Minecraft force-load waves</td><td>Core load calls (always 0), waves planned / started / finished / released, chunks requested and unique, group outcomes, read pending wait, reload of reused chunks p50 for Minecraft against WorldData Core.</td></tr>
+<tr><td>Block writes and parallel reads</td><td>Writes and failures, positions restored, parallel read bursts with the mean parallel-to-single ratio and disagreements between threads.</td></tr>
+</table>
+
+<p>Kept out of <code>report.md</code> on purpose and written to <code>report.json</code> instead: phase marks, batch statistics, wave detail, thrash workers, contention probes, mutation-to-read lag probes, allocation, DataSink counters and the block-write check. The block-write check used to be printed as a "pipeline drift audit". It was removed from the default report because it compared Minecraft's <code>minecraft:air</code> with what Core stores for air (Core keeps every air variant as empty, so it has no block id for it), which turned every position whose last write was air into a false mismatch. The comparison now treats all air variants as one block and counts unreadable positions apart, and the result stays in <code>report.json</code> as a diagnostic.</p>
+<h3>What is not measured, and why</h3>
+<ul>
+<li><b>Core's spill timer:</b> internal to the Core and not exposed by its public API. The reload time of reused chunks is shown for both sides when both have a finished run with the same ops and seed.</li>
+<li><b>Core's own tick budget:</b> it is set with the Core's own command and is not an input of this suite; the report shows MSPT for whatever the Core is configured to.</li>
+<li><b>Short or cold runs:</b> the first ticks of a run run cold code, so the harness time per tick is meaningful from a few hundred ticks on, not for a run of a few seconds.</li>
+<li>Spatial calls are plain reads; an incomplete coverage counts as UNLOADED on both sides.</li>
+</ul>
+
+<h2>Threads</h2>
+<p>Everything runs on the server thread except: light reads (on an integrated server the pack run issues them from the client tick, under the same time budget, because the Core answers light live from the thread that owns the level and the client thread owns the client level; on a dedicated server they run on the server thread), the 16 contention probe threads (run synchronously inside the tick so no write can race them), and the DataSink IO thread (budgeted, never blocks a tick).</p>
+
+<h2>Layout</h2>
+<pre>benchmark-common/            plain Java, no Minecraft / Fabric / Core imports
+  net.worlddata.benchmark.common.pack   plan, session, ledger, in-flight table, report, tests
+  net.worlddata.benchmark.common.bench  bench config, positions, timing loop, report, file
+worlddata-test-suite/        the one Loom mod (id worlddata_core_test)
+  coreintegration/           the code that reads through net.wdc.core.api (WorldData Core's public API) for runs
+  corecheck/                 the coverage, verify and monitorcheck commands (read-only; monitorcheck also drives the API monitor)
+  bench/                     the bench command: one timed burst of a Core read, optionally beside the Minecraft read
+  fabric/reader|registration|environment   Minecraft arm, writer, command, run launcher
+  src/client                 F3 block (left column), client tick hook for light ops</pre>
+<div class="note">The Core is WorldData Core (mod id <code>worlddata_core</code>, command <code>/worlddata</code>, Java packages <code>net.wdc.core.*</code>, facade <code>WDC</code>). If it renames packages again, only <code>coreintegration</code>, <code>corecheck</code> and the one line <code>CoreFactory.CORE_MOD_ID</code> change.</div>
+
+<h2>Updating the design</h2>
+<p>Send the updated design file and say the design changed. The constants live in one place, <code>PackConfig</code> (batch cap, tick budget, worker count, wave limits); the base op mix in <code>OpKind</code>, the per-batch mix in <code>BatchProfile</code> and the per-op plan in <code>IssuePlan</code>; the batch sizes in <code>BatchPlanner</code>; the wave count, triggers and chunk sets in <code>WaveSchedule</code> and <code>WavePlan</code>, the wave lifecycle in <code>WaveRunner</code>, the Minecraft ticket calls in <code>VanillaWorldReader</code>; the gates in <code>PackReportBuilder</code>.</p>
+</main>
+</body>
+</html>

@@ -1,0 +1,37 @@
+modLoader="javafml"
+loaderVersion="${loader_version_range}"
+license="${mod_license}"
+
+[[mixins]]
+config="worlddata_core_test.client.mixins.json"
+
+[[mods]]
+modId="${mod_id}"
+version="${mod_version}"
+displayName="${mod_name}"
+authors="Rohit_1597"
+logoFile="assets/worlddata_core_test/icon.png"
+description='''
+WorldData Core Test (WDCT) is the test and benchmark mod for WorldData Core. It runs a repeatable synthetic workload (ATM_PACK V1) against the Core's public read API, times it against plain Minecraft, and checks the Core's data against the live world. It also has ramp and efficiency tests, a per-tick time budget and an optional ops-per-second cap, and one launch can run on either the Core or plain Minecraft. It works in any dimension, including custom ones, and with modded blocks and biomes. Not a gameplay mod: use a throwaway world. Reports are written to the game folder.
+'''
+
+[[dependencies.${mod_id}]]
+    modId="neoforge"
+    type="required"
+    versionRange="${neo_version_range}"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="minecraft"
+    type="required"
+    versionRange="${minecraft_version_range}"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="worlddata_core"
+    type="optional"
+    versionRange="[0,)"
+    ordering="AFTER"
+    side="BOTH"
