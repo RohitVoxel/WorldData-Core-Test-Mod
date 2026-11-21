@@ -4,9 +4,13 @@ ATM_PACK V1: a repeatable, ops-count-driven synthetic workload for WorldData Cor
 
 Full documentation: docs/index.html
 
-## Link:
+## Doc Link:
 
 https://rohitvoxel.github.io/WorldData-Core-Test-Mod/
+
+## Download WorldData Core for testing:
+
+https://www.curseforge.com/minecraft/mc-mods/worlddata-core
 
 ## Layout
 
