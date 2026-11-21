@@ -18,11 +18,14 @@ final class ModeReportSupport {
 
     static final String LOAD_NOTE = "The load is not assumed identical across arms. The Minecraft arm calls Minecraft APIs only. The WorldData Core arm calls the Core public API only, with no paired Minecraft baseline; Core's own ingest and budget work happens in the server tick outside the op calls. The mix is the pack read mix (point, layer, filter, spatial, biome / availability / raw / peek / world snapshot) on the 24 pinned hotspot chunks, with no force-load waves, no writes and no light reads (the pack run issues those from the client tick on an integrated server; these modes do not).";
 
+    private static final String[] FIXED_PATTERNS = {"%.0f", "%.1f", "%.2f", "%.3f", "%.4f", "%.5f", "%.6f"};
+
     private ModeReportSupport() {}
 
     static String f(double value, int digits) {
         if (Double.isNaN(value) || Double.isInfinite(value)) return "n/a";
-        return String.format(Locale.ROOT, "%." + digits + "f", value);
+        int index = Math.max(0, Math.min(digits, FIXED_PATTERNS.length - 1));
+        return String.format(Locale.ROOT, FIXED_PATTERNS[index], value);
     }
 
     static void row(StringBuilder sb, String key, String value) {

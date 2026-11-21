@@ -36,7 +36,7 @@ public final class PackReportBuilder {
         long minecraft = arm == Arm.VANILLA ? mine : other != null ? other.restoreP50Nanos() : 0L;
         long core = arm == Arm.CORE ? mine : other != null ? other.restoreP50Nanos() : 0L;
         boolean sameWork = other != null && other.usable() && other.totalOps() == s.ledger().total() && other.seed() == s.setup().seed();
-        if (mineCount > 0L && minecraft > 0L && core > 0L && other != null && other.restoreCount() > 0L && sameWork) {
+        if (mineCount > 0L && minecraft > 0L && core > 0L && other.restoreCount() > 0L && sameWork) {
             return String.format(Locale.ROOT, "Minecraft %s, WorldData Core %s, Minecraft / WorldData Core = %.2fx (this run: %d re-admits)", nanos(minecraft), nanos(core), minecraft / (double) core, mineCount);
         }
         return "needs a finished run of the other arm with the same op count and seed";

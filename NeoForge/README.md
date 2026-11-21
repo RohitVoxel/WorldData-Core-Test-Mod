@@ -11,10 +11,9 @@ Full documentation: docs/index.html
 
 ## Quick start
 
-1. Build WorldData Core (WorldData_Core_NeoForge.zip) and copy `build/libs/worlddata_core-1.0.0.jar` to `worlddata-test-suite/libs/`.
-2. `./gradlew build` - the mod jar lands in `worlddata-test-suite/build/libs/`.
-3. Put both jars in `mods/`, or use `./gradlew :worlddata-test-suite:runClient` / `:worlddata-test-suite:runServer`.
-4. In a throwaway world: `/worlddatatest run [core|vanilla|auto] [ops] [opsPerSec] [tickMs] [seed] [thrash]` (alias `/wdtest`, permission level 2). The source is chosen per run, so Minecraft does not have to be restarted: `run core` reads through WorldData Core, `run vanilla` (or `minecraft`) reads through Minecraft only, `auto` and no word pick Core when it is installed. `opsPerSec` is the most ops sent in any one second; left out or 0 means no cap (as fast as the time budget allows). `thrash` is the number of thrash workers, 16 by default, up to 64. It runs in the dimension you run it from, vanilla or custom. Other commands: `stop`, `status`, `times`, `latency`, `apicoverage`, `captureaudit`, `sources`, `counts [chunk|section]`, `ramp [core|vanilla|auto] <targetMs> [options]` (alias `throttle`), `efficiency [auto|core|vanilla|minecraft] [options]`, the checks `coverage [radius]`, `verify [radius]` and `monitorcheck`, and the micro-bench `bench [compare] <api> [count] [mode]`.
+1. `./gradlew build` - Gradle downloads WorldData Core 1.0.0 from CurseForge (project 1812200, through cursemaven), so there is no jar to copy. The mod jar lands in `worlddata-test-suite/build/libs/`.
+2. Put the mod jar and WorldData Core (https://www.curseforge.com/minecraft/mc-mods/worlddata-core) in `mods/`, or use `./gradlew :worlddata-test-suite:runClient` / `:worlddata-test-suite:runServer`.
+3. In a throwaway world: `/worlddatatest run [core|vanilla|auto] [ops] [opsPerSec] [tickMs] [seed] [thrash]` (alias `/wdtest`, permission level 2). The source is chosen per run, so Minecraft does not have to be restarted: `run core` reads through WorldData Core, `run vanilla` (or `minecraft`) reads through Minecraft only, `auto` and no word pick Core when it is installed. `opsPerSec` is the most ops sent in any one second; left out or 0 means no cap (as fast as the time budget allows). `thrash` is the number of thrash workers, 16 by default, up to 64. It runs in the dimension you run it from, vanilla or custom. Other commands: `stop`, `status`, `times`, `latency`, `apicoverage`, `captureaudit`, `sources`, `counts [chunk|section]`, `ramp [core|vanilla|auto] <targetMs> [options]` (alias `throttle`), `efficiency [auto|core|vanilla|minecraft] [options]`, the checks `coverage [radius]`, `verify [radius]` and `monitorcheck`, and the micro-bench `bench [compare] <api> [count] [mode]`.
 
 Choosing the source: run the same ops and seed once with `run vanilla 200000` and once with `run core 200000` in the same game, then `times` compares them. A Minecraft run made while WorldData Core is installed still has Core doing its own tick work (chunk ingestion, cache upkeep), because Core is loaded; the report says so and marks that run in `times`. For a pure Minecraft baseline, take the Core jar out of `mods/`. `sources` explains the choices and shows what `auto` means in this game.
 
@@ -34,7 +33,7 @@ Micro-bench (`bench [compare] <api> [count] [mode]`): one timed burst of a singl
 - Positions are always LIVE: `fixed` refuses with the chunk and its Core status when your own chunk is not LIVE in the Core (and loaded in Minecraft for `compare`); `random` and `acquire` skip chunks that are not, report how many, and refuse only when none is usable.
 - The numbers come from this micro-bench, not from pack TPS or MSPT.
 
-Without the Core jar the build fails only inside the `coreintegration` package. The op mix uses the Core's block lookup by tag, name and state id, `hasTagAt` and `WDC.blocks()`, so build against a Core that has them (the latest Core zips).
+The build downloads WorldData Core 1.0.0 from CurseForge. The op mix uses the Core's block lookup by tag, name and state id, `hasTagAt` and `WDC.blocks()`, so it needs a Core that has them (1.0.0 or newer).
 
 Report and counts file locations are written to the server log, not to chat.
 

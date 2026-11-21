@@ -42,7 +42,7 @@ public final class ArmRunStore {
                     Long.parseLong(p.getProperty("completedOps", "0")), Long.parseLong(p.getProperty("finishMillis", "0")),
                     Boolean.parseBoolean(p.getProperty("stoppedEarly", "false")), p.getProperty("finishedAt", ""),
                     Long.parseLong(p.getProperty("restoreP50Nanos", "0")), Long.parseLong(p.getProperty("restoreCount", "0")), Long.parseLong(p.getProperty("opsPerSecond", "0")),
-                    Boolean.parseBoolean(p.getProperty("coreInstalled", arm == Arm.CORE ? "true" : "false")));
+                    Boolean.parseBoolean(p.getProperty("coreInstalled", Boolean.toString(arm == Arm.CORE))));
         } catch (IOException | RuntimeException e) {
             return null;
         }

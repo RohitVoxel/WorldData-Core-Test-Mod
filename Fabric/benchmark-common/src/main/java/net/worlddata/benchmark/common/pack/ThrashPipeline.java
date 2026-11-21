@@ -37,25 +37,28 @@ public final class ThrashPipeline {
         });
     }
 
-    public void warmUp() {
+    public boolean warmUp() {
         CountDownLatch started = new CountDownLatch(threads);
         CountDownLatch release = new CountDownLatch(1);
-        for (int i = 0; i < threads; i++) {
-            pool.execute(() -> {
-                started.countDown();
-                try {
-                    release.await(2, TimeUnit.SECONDS);
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                }
-            });
-        }
+        boolean allStarted = false;
         try {
-            started.await(2, TimeUnit.SECONDS);
+            for (int i = 0; i < threads; i++) {
+                pool.execute(() -> {
+                    started.countDown();
+                    try {
+                        release.await();
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                    }
+                });
+            }
+            allStarted = started.await(2, TimeUnit.SECONDS);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
+        } finally {
+            release.countDown();
         }
-        release.countDown();
+        return allStarted;
     }
 
     public Burst burst(ThrashProbe probe, int[] xs, int[] ys, int[] zs, int readsPerThread) {

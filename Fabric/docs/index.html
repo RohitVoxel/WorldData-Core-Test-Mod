@@ -29,11 +29,9 @@
 <p>The same seeded plan runs on two sides: <b>Minecraft</b> (ServerLevel only; chosen with <code>run vanilla</code>, or picked automatically when WorldData Core is not installed) and <b>WorldData Core</b> (reads through its public API, writes through Minecraft, plus a paired Minecraft baseline sampled on the same coordinates, one read in 32 of an action, one in 256 for chunk, box and grid scans, plus the first 64 successful samples of every action and 16 for the scans, so p50 and p99 stay valid while the baseline stays cheap). The report shows both sides, the time each took to finish all ops and the sample policy.</p>
 
 <h2>Quick start</h2>
-<pre>1. Build the Core:      WorldData_Core_Fabric.zip  -&gt;  build/libs/worlddata_core-1.0.0.jar
-2. Copy the jar to:     worlddata-test-suite/libs/worlddata_core-1.0.0.jar
-3. ./gradlew build      (worlddata-test-suite/build/libs/worlddata-core-test-suite-0.1.0.jar)
-4. Put both jars in mods/ and open a THROWAWAY world (the run edits blocks in a sky arena and restores them)
-5. /worlddatatest run                    (200,000 ops, no ops per second cap)
+<pre>1. ./gradlew build      (worlddata-test-suite/build/libs/worlddata-core-test-suite-0.1.1.jar; WorldData Core 1.0.0 is downloaded from CurseForge, no jar to copy)
+2. Put both jars in mods/ (WorldData Core: https://www.curseforge.com/minecraft/mc-mods/worlddata-core) and open a THROWAWAY world (the run edits blocks in a sky arena and restores them)
+3. /worlddatatest run                    (200,000 ops, no ops per second cap)
    /worlddatatest run 500000             (ops)
    /worlddatatest run 500000 40000       (ops, opsPerSec: send at most 40000 ops per second; 0 or left out = no cap)
    /worlddatatest run 500000 40000 4     (ops, opsPerSec, tickMs: test mod time per server tick, 1 to 5 ms, default 3)

@@ -174,7 +174,7 @@ public final class VanillaWorldReader implements WorldReader, ChunkLoader {
                 int sky = level.getBrightness(LightLayer.SKY, cursor);
                 int block = level.getBrightness(LightLayer.BLOCK, cursor);
                 recorder.record(CallKind.V_BRIGHTNESS, System.nanoTime() - t, Outcome.PASS);
-                digest = (sky << 4) | block;
+                digest = ((long) sky << 4) | block;
                 return Outcome.PASS;
             }
             case CHUNK_ENTRY -> {
@@ -288,7 +288,7 @@ public final class VanillaWorldReader implements WorldReader, ChunkLoader {
             case FIND_BLOCKS -> {
                 int count = findInChunk(level, chunk, 1 + extra % 3);
                 recorder.record(CallKind.V_CHUNK_SCAN, System.nanoTime() - t, Outcome.PASS);
-                digest = count;
+                digest = count > 0 ? ((long) count << 16) | found[count - 1] : 0L;
             }
             case VISIT_BLOCKS -> {
                 int count = visitWindow(level, chunk, y, extra);
@@ -336,7 +336,7 @@ public final class VanillaWorldReader implements WorldReader, ChunkLoader {
                 List<BlockState> states = BuiltInRegistries.BLOCK.get(ResourceLocation.tryParse(name)).getStateDefinition().getPossibleStates();
                 int[] ids = new int[states.size()];
                 for (int i = 0; i < ids.length; i++) ids[i] = Block.getId(states.get(i));
-                digest = ids.length;
+                digest = ids.length > 0 ? ((long) ids.length << 32) | (ids[ids.length - 1] & 0xFFFFFFFFL) : 0L;
             }
             case STATE_IDS_OF_TAG -> {
                 TagKey<Block> key = TagKey.create(Registries.BLOCK, ResourceLocation.tryParse(LookupSet.TAGS[LookupSet.tag(extra)]));
@@ -594,7 +594,7 @@ public final class VanillaWorldReader implements WorldReader, ChunkLoader {
         return allLoaded(level, minChunkX, minChunkZ, maxChunkX, maxChunkZ) ? Outcome.PASS : Outcome.PENDING;
     }
 
-    private ExecutorService dispatcher() {
+    private void ensureDispatcher() {
         if (dispatcher == null) {
             dispatcher = Executors.newSingleThreadExecutor(task -> {
                 Thread thread = new Thread(task, "worlddata-core-test-chunk-future");
@@ -602,14 +602,14 @@ public final class VanillaWorldReader implements WorldReader, ChunkLoader {
                 return thread;
             });
         }
-        return dispatcher;
     }
 
     private void startFuture(ServerChunkCache cache, int cx, int cz, long key) {
         FutureSlot slot = new FutureSlot();
         futures.put(key, slot);
+        ensureDispatcher();
         try {
-            dispatcher().execute(() -> {
+            dispatcher.execute(() -> {
                 try {
                     cache.getChunkFuture(cx, cz, ChunkStatus.FULL, true).whenComplete((value, error) -> slot.finish(value, error, recorder));
                 } catch (Throwable error) {
