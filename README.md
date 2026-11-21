@@ -1,8 +1,12 @@
-# WorldData Core Test Suite (Fabric)
+# WorldData Core Test Suite
 
 ATM_PACK V1: a repeatable, ops-count-driven synthetic workload for WorldData Core, timed against plain Minecraft (the Minecraft baseline beside the Core arm is sampled). Fabric, Minecraft 1.21.1, Java 21. Not a gameplay mod.
 
 Full documentation: docs/index.html
+
+## Link:
+
+https://rohitvoxel.github.io/WorldData-Core-Test-Mod/
 
 ## Layout
 
